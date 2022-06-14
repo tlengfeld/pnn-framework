@@ -2,6 +2,8 @@ import unittest
 
 import numpy as np
 from matplotlib import pyplot as plt
+from keras.datasets import mnist
+from tensorflow.python import tf2
 
 
 class FullyConnectedNetwork:
@@ -20,9 +22,10 @@ class FullyConnectedNetwork:
         gradientTensor = None
         for layer in self.layers[::-1]:
             gradientTensor = layer.backward(gradientTensor)
+        return gradientTensor
 
 
-class GradientDescent:
+class StochasticGradientDescent:
     def __init__(self, learningRate):
         self.learningRate = learningRate
 
@@ -111,71 +114,202 @@ class SoftmaxLayer:
 
 
 class MeanSquaredErrorLayer:
-    def __init__(self, resultTensor):
-        self.inputTensor = None
-        self.resultTensor = resultTensor
-
-    def forward(self, inputTensor):
-        self.inputTensor = inputTensor
-        result = np.sum(0.5 * (inputTensor - self.resultTensor)**2)
-        print(f"error: {result}")
-        return result
-
-    def backward(self, _):
-        return self.inputTensor - self.resultTensor
-
-
-class CrossEntropy:
-    def __init__(self, expectedTensor):
-        self.expectedTensor = expectedTensor
+    def __init__(self):
         self.prediction = None
+        self.label = None
+
+    def setLabel(self, label):
+        self.label = label
 
     def forward(self, inputTensor):
         self.prediction = inputTensor
-        # errorRate = -np.sum(self.expectedTensor * np.log(inputTensor))
-        errorRate = -self.expectedTensor * np.log(inputTensor) - (1 - self.expectedTensor) * np.log(1 - inputTensor)
+        result = np.sum(0.5 * (inputTensor - self.label) ** 2)
+        return result
+
+    def backward(self, _):
+        return self.prediction - self.label
+
+
+class BinaryCrossEntropy:
+    def __init__(self):
+        self.label = None
+        self.prediction = None
+
+    def setLabel(self, label):
+        self.label = label
+
+    def forward(self, inputTensor):
+        self.prediction = inputTensor
+        # errorRate = -np.sum(self.label * np.log(inputTensor))
+        errorRate = np.mean(-self.label * np.log(inputTensor) - (1 - self.label) * np.log(1 - inputTensor))
         # print(f"errorRate: {errorRate}")
         return errorRate
 
     def backward(self, _):
-        result = -self.expectedTensor / self.prediction + (1 - self.expectedTensor) / (1 - self.prediction)
+        result = -self.label / self.prediction + (1 - self.label) / (1 - self.prediction)
         # print(f"backward cross-entropy: {result}")
         return result
 
 
-class InternetExample:
-    def run(self):
-        network = FullyConnectedNetwork()
+class CategoricalCrossEntropy:
+    def __init__(self):
+        self.prediction = None
+        self.label = None
 
-        fcl1 = FullyConnectedLayer(np.array([2, -3]), np.array([[-1, 0.67], [1, -0.67]]))
+    def setLabel(self, label):
+        self.label = label
+
+    def forward(self, x):
+        self.prediction = x
+        return (- self.label * np.log(x)).mean()
+
+    def backward(self, _):
+        return - self.label / self.prediction
+
+
+class MnistExample:
+    def __init__(self):
+        self.network = FullyConnectedNetwork()
+        optimizer = StochasticGradientDescent(0.001)
+
+        fcl1 = FullyConnectedLayer(np.random.random(10), np.random.random((10, 784)), optimizer)
+        self.network.addLayer(fcl1)
+
+        # sig1 = SigmoidLayer()
+        # self.network.addLayer(sig1)
+        #
+        # fcl2 = FullyConnectedLayer(np.random.random(20), np.random.random((20, 20)), optimizer)
+        # self.network.addLayer(fcl2)
+        #
+        # sig2 = SigmoidLayer()
+        # self.network.addLayer(sig2)
+        #
+        # fcl3 = FullyConnectedLayer(np.random.random(10), np.random.random((10, 20)), optimizer)
+        # self.network.addLayer(fcl3)
+
+        softmax = SoftmaxLayer()
+        self.network.addLayer(softmax)
+
+        self.errorLayer = MeanSquaredErrorLayer()
+        self.network.addLayer(self.errorLayer)
+
+    def train(self, epochSize, train_X, train_y, test_X, test_y):
+        # self.find_percentage_of_each_number_in_training_set_converted(train_y)
+        epoch_error_rates_training = []
+        epoch_error_rates_testing = []
+
+        for j in range(epochSize):
+            print(f"Training progress: {100 * j / epochSize}%")
+
+            # training
+            (train_X, train_y) = self.shuffle_in_unison(train_X, train_y)
+
+            error_rates_training = []
+
+            for i in range(len(train_X)):
+                self.errorLayer.setLabel(train_y[i])
+                error_rates_training.append(self.network.forward(train_X[i]))
+                self.network.backward()
+
+            epoch_error_rates_training.append(np.average(error_rates_training))
+
+            # testing
+            error_rates_testing = []
+
+            for i in range(len(test_X)):
+                self.errorLayer.setLabel(test_y[i])
+                error_rates_testing.append(self.network.forward(test_X[i]))
+
+            epoch_error_rates_testing.append(np.average(error_rates_testing))
+
+        # plotting error rates for training and testing
+        plt.plot(range(len(epoch_error_rates_training)), epoch_error_rates_training)
+        plt.plot(range(len(epoch_error_rates_testing)), epoch_error_rates_testing)
+        plt.legend({"training", "testing"})
+        plt.show()
+
+    def shuffle_in_unison(self, a, b):
+        assert len(a) == len(b)
+        shuffled_a = np.empty(a.shape, dtype=a.dtype)
+        shuffled_b = np.empty(b.shape, dtype=b.dtype)
+        permutation = np.random.permutation(len(a))
+        for old_index, new_index in enumerate(permutation):
+            shuffled_a[new_index] = a[old_index]
+            shuffled_b[new_index] = b[old_index]
+        return shuffled_a, shuffled_b
+
+    def find_percentage_of_each_number_in_training_set_converted(self, ground_truths):
+        amount_of_each_number = np.zeros(10)
+
+        for ground_truth in ground_truths:
+            amount_of_each_number = amount_of_each_number + ground_truth
+
+        print("training set:")
+        for i in range(10):
+            percentage = amount_of_each_number[i] / np.sum(amount_of_each_number)
+            print(f"{i}: {percentage * 100}%")
+
+    def test(self, test_X, test_y):
+        right = []
+        wrong = []
+
+        for i in range(len(test_X)):
+            self.errorLayer.setLabel(test_y[i])
+            self.network.forward(test_X[i])
+            prediction = self.errorLayer.prediction.argmax()
+
+            if prediction == test_y[i]:
+                right.append(prediction)
+                # print(f"predicted: {prediction}, actual: {test_y[i]}")
+            else:
+                wrong.append(prediction)
+                # print(f"predicted: {prediction}, actual: {test_y[i]}")
+
+        success_percentage = len(right) / len(test_X)
+        print(f"Success percentage: {success_percentage}")
+
+
+class InternetExample:
+    def train(self, iterations):
+        network = FullyConnectedNetwork()
+        optimizer = StochasticGradientDescent(0.1)
+
+        fcl1 = FullyConnectedLayer(np.array([2, -3]), np.array([[-1, 0.67], [1, -0.67]]), optimizer)
         network.addLayer(fcl1)
 
         sig1 = SigmoidLayer()
         network.addLayer(sig1)
 
-        fcl2 = FullyConnectedLayer(np.array([1, -4]), np.array([[1, 1], [-0.33, 0.67]]))
+        fcl2 = FullyConnectedLayer(np.array([1, -4]), np.array([[1, 1], [-0.33, 0.67]]), optimizer)
         network.addLayer(fcl2)
 
         sig2 = SigmoidLayer()
         network.addLayer(sig2)
 
-        fcl3 = FullyConnectedLayer(np.array([0.5]), np.array([[0.67, -1.3]]))
+        fcl3 = FullyConnectedLayer(np.array([0.5]), np.array([[0.67, -1.3]]), optimizer)
         network.addLayer(fcl3)
 
         sig3 = SigmoidLayer()
         network.addLayer(sig3)
 
-        expected = np.array([0])
-        crossEntropy = CrossEntropy(expected)
-        network.addLayer(crossEntropy)
+        errorLayer = BinaryCrossEntropy()
+        errorLayer.setLabel(np.array([0]))
+        network.addLayer(errorLayer)
 
-        network.forward(np.array([1, -2]))
-        network.backward()
+        errors = []
+        for i in range(iterations):
+            errors.append(network.forward(np.array([1, -2])))
+            network.backward()
+
+        np.linspace(0, 1, 1000)
+        plt.plot(range(100), errors)
+        plt.show()
+
 
 class PnnExample:
-    def run(self):
+    def train(self, iterations):
         network = FullyConnectedNetwork()
-        optimizer = GradientDescent(0.1)
+        optimizer = StochasticGradientDescent(0.1)
 
         fcl1 = FullyConnectedLayer(np.array([0.0000, 0.0000, 0.0000]),
                                    np.array([[-0.5057,   0.3987,     -0.8943],
@@ -197,12 +331,12 @@ class PnnExample:
         softmax = SoftmaxLayer()
         network.addLayer(softmax)
 
-        expected = np.array([0.7095, 0.0942])
-        crossEntropy = MeanSquaredErrorLayer(expected)
-        network.addLayer(crossEntropy)
+        errorLayer = MeanSquaredErrorLayer()
+        errorLayer.setLabel(np.array([0.7095, 0.0942]))
+        network.addLayer(errorLayer)
 
         errors = []
-        for i in range(100):
+        for i in range(iterations):
             errors.append(network.forward(np.array([0.4183, 0.5209, 0.0291])))
             network.backward()
 
@@ -258,7 +392,7 @@ class TestLayers(unittest.TestCase):
         np.testing.assert_allclose(mat, np.array([0.04505022, 0.05571479, -0.08910487]))
 
     def test_fcl(self):
-        o = GradientDescent(0.1)
+        o = StochasticGradientDescent(0.1)
         fc = FullyConnectedLayer(weights=np.array([[0.4047, 0.9563],
                                         [-0.8192, -0.1274],
                                         [0.3662, -0.7252]]).transpose(),
@@ -283,8 +417,37 @@ class TestLayers(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    q = QuadraticFunction()
-    q.plotGradientDescent()
+    pnnExample = PnnExample()
+    # pnnExample.train(100)  # trains only with one input atm
+
+    # -----------------------
+    internetExample = InternetExample()
+    # internetExample.train(100)  # trains only with one input atm
+
+    # -----------------------
+    mnistExample = MnistExample()
+
+    # load mnist data and convert to fitting layout
+    print("Loading data")
+    (train_X, train_y), (test_X, test_y) = mnist.load_data()
+
+    train_x_flat = train_X.reshape(train_X.shape[0], -1)
+    train_x_flat = train_x_flat / 255
+    train_y_converted = np.zeros((train_y.size, 10))
+    train_y_converted[np.arange(train_y.size), train_y] = 1
+
+    test_x_flat = test_X.reshape(test_X.shape[0], -1)
+    test_x_flat = test_x_flat / 255
+    test_y_converted = np.zeros((test_y.size, 10))
+    test_y_converted[np.arange(test_y.size), test_y] = 1
+
+    print("Training network")
+    mnistExample.train(32, train_x_flat, train_y_converted, test_x_flat, test_y_converted)
+
+    print("Running trained network")
+    mnistExample.test(test_x_flat[0:128], test_y[0:128])
+
+
 
 
 
