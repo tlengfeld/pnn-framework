@@ -82,8 +82,15 @@ class SigmoidLayer:
 
 
 class ReLuLayer:
+    def __init__(self):
+        self.x = None
+
     def forward(self, inputTensor):
+        self.x = inputTensor
         return np.maximum(0, inputTensor)
+
+    def backward(self, dy):
+        return (self.x > 0) * dy
 
 
 class TanHLayer:
@@ -167,25 +174,57 @@ class CategoricalCrossEntropy:
         return - self.label / self.prediction
 
 
+class ConvolutionLayer:
+    def __init__(self, kernels):
+        self.kernel = kernels
+
+    def inner_product(self, a, b):
+        assert(a.shape[0] == b.shape[0])
+        assert(a.shape[1] == b.shape[1])
+
+        result = 0
+
+        for ix in range(a.shape[0]):
+            for iy in range(a.shape[1]):
+                result += a[ix, iy] * b[ix, iy]
+
+        return result
+
+    def forward(self, input_tensor):
+        result_x_size = input_tensor.shape[0] - self.kernel.shape[0] + 1
+        result_y_size = input_tensor.shape[1] - self.kernel.shape[1] + 1
+        result = np.zeros((result_y_size, result_y_size))
+
+        for ix in range(result_x_size):
+            for iy in range(result_y_size):
+                input_sub_array = input_tensor[ix:ix + self.kernel.shape[0], iy:iy + self.kernel.shape[1]]
+                result[ix, iy] = self.inner_product(input_sub_array, self.kernel)
+
+        return result
+
+    def backward(self, dy):
+        pass
+
+
 class MnistExample:
     def __init__(self):
         self.network = FullyConnectedNetwork()
-        optimizer = StochasticGradientDescent(0.001)
+        optimizer = StochasticGradientDescent(0.1)
 
-        fcl1 = FullyConnectedLayer(np.random.random(10), np.random.random((10, 784)), optimizer)
+        fcl1 = FullyConnectedLayer(np.random.random(20) * 2 - 1, np.random.random((20, 784)) * 2 - 1, optimizer)
         self.network.addLayer(fcl1)
 
-        # sig1 = SigmoidLayer()
-        # self.network.addLayer(sig1)
-        #
-        # fcl2 = FullyConnectedLayer(np.random.random(20), np.random.random((20, 20)), optimizer)
-        # self.network.addLayer(fcl2)
-        #
-        # sig2 = SigmoidLayer()
-        # self.network.addLayer(sig2)
-        #
-        # fcl3 = FullyConnectedLayer(np.random.random(10), np.random.random((10, 20)), optimizer)
-        # self.network.addLayer(fcl3)
+        sig1 = SigmoidLayer()
+        self.network.addLayer(sig1)
+
+        fcl2 = FullyConnectedLayer(np.random.random(20) * 2 - 1, np.random.random((20, 20)) * 2 - 1, optimizer)
+        self.network.addLayer(fcl2)
+
+        sig2 = SigmoidLayer()
+        self.network.addLayer(sig2)
+
+        fcl3 = FullyConnectedLayer(np.random.random(10) * 2 - 1, np.random.random((10, 20)) * 2 - 1, optimizer)
+        self.network.addLayer(fcl3)
 
         softmax = SoftmaxLayer()
         self.network.addLayer(softmax)
@@ -211,6 +250,7 @@ class MnistExample:
                 error_rates_training.append(self.network.forward(train_X[i]))
                 self.network.backward()
 
+            print(f"-- Training loss: {np.average(error_rates_training)}")
             epoch_error_rates_training.append(np.average(error_rates_training))
 
             # testing
@@ -220,6 +260,7 @@ class MnistExample:
                 self.errorLayer.setLabel(test_y[i])
                 error_rates_testing.append(self.network.forward(test_X[i]))
 
+            print(f"-- Testing loss: {np.average(error_rates_testing)}")
             epoch_error_rates_testing.append(np.average(error_rates_testing))
 
         # plotting error rates for training and testing
@@ -391,29 +432,73 @@ class TestLayers(unittest.TestCase):
         mat = s.backward(np.array([0.1803, 0.2261, -0.3567]))
         np.testing.assert_allclose(mat, np.array([0.04505022, 0.05571479, -0.08910487]))
 
-    def test_fcl(self):
-        o = StochasticGradientDescent(0.1)
-        fc = FullyConnectedLayer(weights=np.array([[0.4047, 0.9563],
+    def test_2D_fcl(self):
+        optimizer = StochasticGradientDescent(0.1)
+        fcl = FullyConnectedLayer(weights=np.array([[0.4047, 0.9563],
                                         [-0.8192, -0.1274],
                                         [0.3662, -0.7252]]).transpose(),
                                  biases=np.array([0, 0]),
-                                 optimizer=o)
+                                 optimizer=optimizer)
 
         # forward test
-        mat = fc.forward(np.array([0.4883, 0.5599, 0.5140]))
+        mat = fcl.forward(np.array([0.4883, 0.5599, 0.5140]))
         np.testing.assert_allclose(mat, np.array([-0.07282827, 0.02287723]))
 
         # backward test
-        mat = fc.backward(np.array([-0.3268, 0.3268]))
+        mat = fcl.backward(np.array([-0.3268, 0.3268]))
         np.testing.assert_allclose(mat, np.array([0.18026288, 0.22608024, -0.35666952]))
 
         # delta weights test
-        np.testing.assert_allclose(fc.deltaBiases, np.array([-0.3268, 0.3268]))
+        np.testing.assert_allclose(fcl.deltaBiases, np.array([-0.3268, 0.3268]))
 
         # delta biases tests
-        np.testing.assert_allclose(fc.deltaWeights, np.array([[-0.15957644, 0.15957644],
-                                                      [-0.18297532, 0.18297532],
-                                                      [-0.1679752,  0.1679752]]))
+        np.testing.assert_allclose(fcl.deltaWeights, np.array([[-0.15957644, 0.15957644],
+                                                               [-0.18297532, 0.18297532],
+                                                               [-0.1679752,  0.1679752]]))
+
+    def test_3D_fcl(self):
+        optimizer = StochasticGradientDescent(0.1)
+        fcl = FullyConnectedLayer(biases=np.array([0, 0, 0]),
+                                 weights=np.array([[-0.5057, 0.3987, -0.8943],
+                                                  [0.3356, 0.1673, 0.8321],
+                                                  [-0.3485, -0.4597, -0.1121]]).T,
+                                 optimizer=optimizer)
+
+        # forward test
+        mat = fcl.forward(np.array([0.4183, 0.5209, 0.0291]))
+        np.testing.assert_allclose(mat, np.array([-0.0469, 0.2406, 0.0561]), atol=1e-04)
+
+        # backward test
+        fcl.backward(np.array([0.0451, 0.0557, -0.0891]))
+        np.testing.assert_allclose(fcl.deltaBiases, np.array([0.0451, 0.0557, -0.0891]), atol=1e-04)
+        np.testing.assert_allclose(fcl.deltaWeights, np.array([[0.0188, 0.0233, -0.0373],
+                                                               [0.0235, 0.0290, -0.0464],
+                                                               [0.0013, 0.0016, -0.0026]]), atol=1e-04)
+
+    def test_conv2D_simple(self):
+        in_tensor = np.array([0, 6, 1, 1, 6, 7, 9, 3, 7, 7, 3, 5, 3, 8, 3, 8, 6, 8, 0, 2, 4, 3, 2, 9, 1])
+        in_tensor = in_tensor.reshape((5, 5))
+
+        kernel = np.array([1, 1, 1, 1, -8, 1, 1, 1, 1])
+        kernel = kernel.reshape((3, 3))
+
+        conv_2d = ConvolutionLayer(kernel)
+        actual = conv_2d.forward(in_tensor)
+
+        expected = np.array([-44, 16, -24, 7, 22, -31, -12, -28, 36])
+        expected = expected.reshape((3, 3))
+
+        np.testing.assert_allclose(expected, actual, atol=1e-04)
+
+    def test_conv2D_complex(self):
+        in_tensor = np.array([0.1, -0.2, 0.5, 0.6, 1.2, 1.4, 1.6, 2.2, 0.01, 0.2, -0.3, 4.0, 0.9, 0.3, 0.5, 0.65, 1.1, 0.7, 2.2, 4.4, 3.2, 1.7, 6.3, 8.2])
+        in_tensor.reshape((4, 3, 2))
+
+        kernels = np.array([0.1, -0.2, 0.3, 0.4, 0.7, 0.6, 0.9, -1.1, 0.37, -0.9, 0.32, 0.17, 0.9, 0.3, 0.2, -0.7])
+        kernels.reshape((2, 2, 2, 2))
+
+        conv_2d = ConvolutionLayer(kernels)
+        conv_2d.forward(in_tensor)
 
 
 if __name__ == "__main__":
@@ -442,7 +527,7 @@ if __name__ == "__main__":
     test_y_converted[np.arange(test_y.size), test_y] = 1
 
     print("Training network")
-    mnistExample.train(32, train_x_flat, train_y_converted, test_x_flat, test_y_converted)
+    mnistExample.train(20, train_x_flat[0:1], train_y_converted[0:1], test_x_flat, test_y_converted)
 
     print("Running trained network")
     mnistExample.test(test_x_flat[0:128], test_y[0:128])
