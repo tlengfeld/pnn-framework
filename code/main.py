@@ -176,7 +176,7 @@ class CategoricalCrossEntropy:
 
 class ConvolutionLayer:
     def __init__(self, kernels):
-        self.kernel = kernels
+        self.kernels = kernels
 
     def inner_product(self, a, b):
         assert(a.shape[0] == b.shape[0])
@@ -191,14 +191,21 @@ class ConvolutionLayer:
         return result
 
     def forward(self, input_tensor):
-        result_x_size = input_tensor.shape[0] - self.kernel.shape[0] + 1
-        result_y_size = input_tensor.shape[1] - self.kernel.shape[1] + 1
-        result = np.zeros((result_y_size, result_y_size))
+        result_x_size = input_tensor.shape[0] - self.kernels.shape[0] + 1
+        result_y_size = input_tensor.shape[1] - self.kernels.shape[1] + 1
+        amount_channel = input_tensor.shape[2]
+        amount_filter = self.kernels.shape[3]
 
-        for ix in range(result_x_size):
-            for iy in range(result_y_size):
-                input_sub_array = input_tensor[ix:ix + self.kernel.shape[0], iy:iy + self.kernel.shape[1]]
-                result[ix, iy] = self.inner_product(input_sub_array, self.kernel)
+        result = np.zeros((result_x_size, result_y_size, amount_filter))
+
+        for i_channel in range(amount_channel):
+            for i_filter in range(amount_filter):
+                current_filter = self.kernels[:self.kernels.shape[0], :self.kernels.shape[1], i_channel, i_filter]
+
+                for ix in range(result_x_size):
+                    for iy in range(result_y_size):
+                        input_application_area = input_tensor[ix:ix + self.kernels.shape[0], iy:iy + self.kernels.shape[1], i_channel]
+                        result[ix, iy, i_filter] += self.inner_product(input_application_area, current_filter)
 
         return result
 
@@ -477,28 +484,33 @@ class TestLayers(unittest.TestCase):
 
     def test_conv2D_simple(self):
         in_tensor = np.array([0, 6, 1, 1, 6, 7, 9, 3, 7, 7, 3, 5, 3, 8, 3, 8, 6, 8, 0, 2, 4, 3, 2, 9, 1])
-        in_tensor = in_tensor.reshape((5, 5))
+        in_tensor = in_tensor.reshape((5, 5, 1))  # (x_size, y_size, amount_channel)
 
         kernel = np.array([1, 1, 1, 1, -8, 1, 1, 1, 1])
-        kernel = kernel.reshape((3, 3))
+        kernel = kernel.reshape((3, 3, 1, 1))  # (x_size, y_size, amount_channel, amount_filters)
 
         conv_2d = ConvolutionLayer(kernel)
         actual = conv_2d.forward(in_tensor)
 
         expected = np.array([-44, 16, -24, 7, 22, -31, -12, -28, 36])
-        expected = expected.reshape((3, 3))
+        expected = expected.reshape((3, 3, 1))
 
         np.testing.assert_allclose(expected, actual, atol=1e-04)
 
     def test_conv2D_complex(self):
         in_tensor = np.array([0.1, -0.2, 0.5, 0.6, 1.2, 1.4, 1.6, 2.2, 0.01, 0.2, -0.3, 4.0, 0.9, 0.3, 0.5, 0.65, 1.1, 0.7, 2.2, 4.4, 3.2, 1.7, 6.3, 8.2])
-        in_tensor.reshape((4, 3, 2))
+        in_tensor = in_tensor.reshape((4, 3, 2), order='F')  # (x_size, y_size, amount_channel)
 
         kernels = np.array([0.1, -0.2, 0.3, 0.4, 0.7, 0.6, 0.9, -1.1, 0.37, -0.9, 0.32, 0.17, 0.9, 0.3, 0.2, -0.7])
-        kernels.reshape((2, 2, 2, 2))
+        kernels = kernels.reshape((2, 2, 2, 2), order='F')  # (x_size, y_size, amount_channel, amount_filters)
 
         conv_2d = ConvolutionLayer(kernels)
-        conv_2d.forward(in_tensor)
+        actual = conv_2d.forward(in_tensor)
+
+        expected = np.array([2.0, -0.34000015, -0.8299999, 2.123, -3.8300004, 2.0599995, 1.469, -0.7839999, -1.4639999, -0.12880003, -3.6889997, -1.9839993])
+        expected = expected.reshape((3, 2, 2), order='F')
+
+        np.testing.assert_allclose(expected, actual, atol=1e-04)
 
 
 if __name__ == "__main__":
