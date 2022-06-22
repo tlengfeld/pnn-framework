@@ -190,27 +190,34 @@ class ConvolutionLayer:
 
         return result
 
-    def forward(self, input_tensor):
-        result_x_size = input_tensor.shape[0] - self.kernels.shape[0] + 1
-        result_y_size = input_tensor.shape[1] - self.kernels.shape[1] + 1
+    def convolution(self, input_tensor, kernels):
+        result_x_size = input_tensor.shape[0] - kernels.shape[0] + 1
+        result_y_size = input_tensor.shape[1] - kernels.shape[1] + 1
         amount_channel = input_tensor.shape[2]
-        amount_filter = self.kernels.shape[3]
+        amount_filter = kernels.shape[3]
 
         result = np.zeros((result_x_size, result_y_size, amount_filter))
 
         for i_channel in range(amount_channel):
             for i_filter in range(amount_filter):
-                current_filter = self.kernels[:self.kernels.shape[0], :self.kernels.shape[1], i_channel, i_filter]
+                current_filter = kernels[:kernels.shape[0], :kernels.shape[1], i_channel, i_filter]
 
                 for ix in range(result_x_size):
                     for iy in range(result_y_size):
-                        input_application_area = input_tensor[ix:ix + self.kernels.shape[0], iy:iy + self.kernels.shape[1], i_channel]
+                        input_application_area = input_tensor[ix:ix + kernels.shape[0], iy:iy + kernels.shape[1], i_channel]
                         result[ix, iy, i_filter] += self.inner_product(input_application_area, current_filter)
 
         return result
 
+    def calculate_backwards_kernels(self, original_kernels):
+        return np.rot90(np.transpose(original_kernels, axes=(0, 1, 3, 2)), 2)
+
+    def forward(self, input_tensor):
+        return self.convolution(input_tensor, self.kernels)  # + biases
+
     def backward(self, dy):
-        pass
+        padded_dy = np.pad(dy, pad_width=((self.kernels.shape[0] - 1, self.kernels.shape[0] - 1), (self.kernels.shape[1] - 1, self.kernels.shape[1] - 1), (0, 0)))
+        return self.convolution(padded_dy, self.calculate_backwards_kernels(self.kernels))
 
 
 class MnistExample:
@@ -498,19 +505,32 @@ class TestLayers(unittest.TestCase):
         np.testing.assert_allclose(expected, actual, atol=1e-04)
 
     def test_conv2D_complex(self):
-        in_tensor = np.array([0.1, -0.2, 0.5, 0.6, 1.2, 1.4, 1.6, 2.2, 0.01, 0.2, -0.3, 4.0, 0.9, 0.3, 0.5, 0.65, 1.1, 0.7, 2.2, 4.4, 3.2, 1.7, 6.3, 8.2])
-        in_tensor = in_tensor.reshape((4, 3, 2), order='F')  # (x_size, y_size, amount_channel)
-
         kernels = np.array([0.1, -0.2, 0.3, 0.4, 0.7, 0.6, 0.9, -1.1, 0.37, -0.9, 0.32, 0.17, 0.9, 0.3, 0.2, -0.7])
         kernels = kernels.reshape((2, 2, 2, 2), order='F')  # (x_size, y_size, amount_channel, amount_filters)
 
         conv_2d = ConvolutionLayer(kernels)
-        actual = conv_2d.forward(in_tensor)
 
-        expected = np.array([2.0, -0.34000015, -0.8299999, 2.123, -3.8300004, 2.0599995, 1.469, -0.7839999, -1.4639999, -0.12880003, -3.6889997, -1.9839993])
-        expected = expected.reshape((3, 2, 2), order='F')
+        # forward test
+        in_forward = np.array([0.1, -0.2, 0.5, 0.6, 1.2, 1.4, 1.6, 2.2, 0.01, 0.2, -0.3, 4.0, 0.9, 0.3, 0.5, 0.65, 1.1, 0.7, 2.2, 4.4, 3.2, 1.7, 6.3, 8.2])
+        in_forward = in_forward.reshape((4, 3, 2), order='F')  # (x_size, y_size, amount_channel)
 
-        np.testing.assert_allclose(expected, actual, atol=1e-04)
+        expected_forward = np.array([2.0, -0.34000015, -0.8299999, 2.123, -3.8300004, 2.0599995, 1.469, -0.7839999, -1.4639999, -0.12880003, -3.6889997, -1.9839993])
+        expected_forward = expected_forward.reshape((3, 2, 2), order='F')
+
+        actual_forward = conv_2d.forward(in_forward)
+
+        np.testing.assert_allclose(expected_forward, actual_forward, atol=1e-04)
+
+        # backward test
+        in_backward = np.array([0.1, 0.33, -0.6, -0.25, 1.3, 0.01, -0.5, 0.2, 0.1, -0.8, 0.81, 1.1])
+        in_backward = in_backward.reshape((3, 2, 2), order='F')
+
+        expected_backward = np.array([-0.175, 0.537, -0.269, 0.030000009, -0.451, 1.3177, -0.5629999, -1.215, -0.33100003, 0.41320002, 1.0127001, 0.191, -0.38, 0.32099998, -0.072000004, -0.33, -0.905, 1.8259999, 0.997, 0.926, -0.385, 2.1669998, -1.7679999, -0.78099996])
+        expected_backward = expected_backward.reshape((4, 3, 2), order='F')
+
+        actual_backward = conv_2d.backward(in_backward)
+
+        np.testing.assert_allclose(expected_backward, actual_backward, atol=1e-04)
 
 
 if __name__ == "__main__":
