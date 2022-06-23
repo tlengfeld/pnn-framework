@@ -198,6 +198,9 @@ class ConvolutionLayer:
         self.weight_updates = self.channelwise_conv(self.x, dy)
         self.kernels = self.optimizer.update(self.kernels, self.weight_updates)
 
+        bias_updates = np.sum(dy, axis=(0, 1))
+        self.biases = self.optimizer.update(self.biases, bias_updates)
+
         return dx
 
     def convolution(self, input_tensor, kernels):
@@ -249,6 +252,30 @@ class ConvolutionLayer:
                 result[:, :, i_channel, i_filter] = self.convolution(x_current_channel, current_filter_result).reshape((self.kernels.shape[0], self.kernels.shape[1]))
 
         return result
+
+
+class MaxPoolingLayer:
+    def __init__(self, kernel_size):
+        self.kernel_size = kernel_size
+        self.stride = kernel_size
+        self.mask = None
+
+    def forward(self, in_tensor):
+        result_shape = (in_tensor.shape[0] // self.kernel_size[0], in_tensor.shape[1] // self.kernel_size[1])
+        result = np.zeros(result_shape)
+
+        for ix in range(result.shape[0]):
+            for iy in range(result.shape[1]):
+                x = ix * self.stride[0]
+                y = iy * self.stride[1]
+
+                application_area = in_tensor[x:x + self.kernel_size[0], y:y + self.kernel_size[1]]
+                result[ix, iy] = np.max(application_area)
+
+        return result.flatten()
+
+    def backward(self):
+        pass
 
 
 class MnistExample:
@@ -569,6 +596,19 @@ class TestLayers(unittest.TestCase):
         expected_kernels = expected_kernels.reshape((2, 2, 2, 2), order='F')
 
         np.testing.assert_allclose(expected_kernels, conv_2d.weight_updates, atol=1e-04)
+
+    def test_max_pooling(self):
+        max_pooling = MaxPoolingLayer((2, 2))
+
+        in_tensor = np.array([4, 1, 1, 3, 3, 4, 8, 6, 0, 5, 2, 2, 0, 6, 9, 5, 1, 8, 4, 8, 5, 7, 4, 2, 9, 8, 5, 9, 3, 0, 3, 6, 7, 4, 7, 5])
+        in_tensor = in_tensor.reshape((6, 6))
+
+        # forward test
+        expected_forward = np.array([8, 5, 4, 8, 9, 8, 9, 9, 7])
+
+        actual_forward = max_pooling.forward(in_tensor)
+
+        np.testing.assert_allclose(expected_forward, actual_forward, atol=1e-04)
 
 
 if __name__ == "__main__":
