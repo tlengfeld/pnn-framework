@@ -50,10 +50,13 @@ class FullyConnectedLayer:
 
     def backward(self, gradientTensor):
         result = self.weights.transpose() @ gradientTensor
+
         self.deltaWeights = self.x[:, np.newaxis] * gradientTensor[np.newaxis, :]
         self.weights = self.optimizer.update(self.weights, self.deltaWeights.transpose())
+
         self.deltaBiases = gradientTensor
         self.biases = self.optimizer.update(self.biases, self.deltaBiases)
+
         # print(f"backward fcl:\n{result}")
         # print(f"delta weights:\n{self.deltaWeights}")
         # print(f"delta biases:\n{self.deltaBiases}")
@@ -175,8 +178,46 @@ class CategoricalCrossEntropy:
 
 
 class ConvolutionLayer:
-    def __init__(self, kernels):
+    def __init__(self, kernels, biases, optimizer):
         self.kernels = kernels
+        self.biases = biases
+        self.optimizer = optimizer
+        self.x = None
+        self.weight_updates = None
+
+    def forward(self, input_tensor):
+        self.x = input_tensor
+        return self.convolution(input_tensor, self.kernels) + self.biases
+
+    def backward(self, dy):
+        # calc delta x
+        padded_dy = np.pad(dy, pad_width=((self.kernels.shape[0] - 1, self.kernels.shape[0] - 1), (self.kernels.shape[1] - 1, self.kernels.shape[1] - 1), (0, 0)))
+        dx = self.convolution(padded_dy, self.calculate_backwards_kernels(self.kernels))
+
+        # weight update
+        self.weight_updates = self.channelwise_conv(self.x, dy)
+        self.kernels = self.optimizer.update(self.kernels, self.weight_updates)
+
+        return dx
+
+    def convolution(self, input_tensor, kernels):
+        result_x_size = input_tensor.shape[0] - kernels.shape[0] + 1
+        result_y_size = input_tensor.shape[1] - kernels.shape[1] + 1
+        amount_channels = input_tensor.shape[2]
+        amount_filter = kernels.shape[3]
+
+        result = np.zeros((result_x_size, result_y_size, amount_filter))
+
+        for i_channel in range(amount_channels):
+            for i_filter in range(amount_filter):
+                current_filter = kernels[:, :, i_channel, i_filter]
+
+                for ix in range(result_x_size):
+                    for iy in range(result_y_size):
+                        input_application_area = input_tensor[ix:ix + kernels.shape[0], iy:iy + kernels.shape[1], i_channel]
+                        result[ix, iy, i_filter] += self.inner_product(input_application_area, current_filter)
+
+        return result
 
     def inner_product(self, a, b):
         assert(a.shape[0] == b.shape[0])
@@ -190,34 +231,24 @@ class ConvolutionLayer:
 
         return result
 
-    def convolution(self, input_tensor, kernels):
-        result_x_size = input_tensor.shape[0] - kernels.shape[0] + 1
-        result_y_size = input_tensor.shape[1] - kernels.shape[1] + 1
-        amount_channel = input_tensor.shape[2]
-        amount_filter = kernels.shape[3]
-
-        result = np.zeros((result_x_size, result_y_size, amount_filter))
-
-        for i_channel in range(amount_channel):
-            for i_filter in range(amount_filter):
-                current_filter = kernels[:kernels.shape[0], :kernels.shape[1], i_channel, i_filter]
-
-                for ix in range(result_x_size):
-                    for iy in range(result_y_size):
-                        input_application_area = input_tensor[ix:ix + kernels.shape[0], iy:iy + kernels.shape[1], i_channel]
-                        result[ix, iy, i_filter] += self.inner_product(input_application_area, current_filter)
-
-        return result
-
     def calculate_backwards_kernels(self, original_kernels):
         return np.rot90(np.transpose(original_kernels, axes=(0, 1, 3, 2)), 2)
 
-    def forward(self, input_tensor):
-        return self.convolution(input_tensor, self.kernels)  # + biases
+    def channelwise_conv(self, x, dy):
+        result = np.zeros(self.kernels.size)
+        result = result.reshape(self.kernels.shape)
 
-    def backward(self, dy):
-        padded_dy = np.pad(dy, pad_width=((self.kernels.shape[0] - 1, self.kernels.shape[0] - 1), (self.kernels.shape[1] - 1, self.kernels.shape[1] - 1), (0, 0)))
-        return self.convolution(padded_dy, self.calculate_backwards_kernels(self.kernels))
+        for i_filter in range(self.kernels.shape[3]):
+            current_filter_result = dy[:, :, i_filter]
+            current_filter_result = current_filter_result.reshape((dy.shape[0], dy.shape[1], 1, 1))
+
+            for i_channel in range(self.kernels.shape[2]):
+                x_current_channel = x[:, :, i_channel]
+                x_current_channel = x_current_channel.reshape((x.shape[0], x.shape[1], 1))
+
+                result[:, :, i_channel, i_filter] = self.convolution(x_current_channel, current_filter_result).reshape((self.kernels.shape[0], self.kernels.shape[1]))
+
+        return result
 
 
 class MnistExample:
@@ -508,7 +539,8 @@ class TestLayers(unittest.TestCase):
         kernels = np.array([0.1, -0.2, 0.3, 0.4, 0.7, 0.6, 0.9, -1.1, 0.37, -0.9, 0.32, 0.17, 0.9, 0.3, 0.2, -0.7])
         kernels = kernels.reshape((2, 2, 2, 2), order='F')  # (x_size, y_size, amount_channel, amount_filters)
 
-        conv_2d = ConvolutionLayer(kernels)
+        optimizer = StochasticGradientDescent(0.1)
+        conv_2d = ConvolutionLayer(kernels=kernels, biases=np.zeros(2), optimizer=optimizer)
 
         # forward test
         in_forward = np.array([0.1, -0.2, 0.5, 0.6, 1.2, 1.4, 1.6, 2.2, 0.01, 0.2, -0.3, 4.0, 0.9, 0.3, 0.5, 0.65, 1.1, 0.7, 2.2, 4.4, 3.2, 1.7, 6.3, 8.2])
@@ -531,6 +563,12 @@ class TestLayers(unittest.TestCase):
         actual_backward = conv_2d.backward(in_backward)
 
         np.testing.assert_allclose(expected_backward, actual_backward, atol=1e-04)
+
+        # weight update test
+        expected_kernels = np.array([1.18, 1.5369998, -0.12350003, -1.052, 0.54599994, 2.5339997, 0.494, 6.0029993, 1.894, 2.856, -0.33600003, 3.8370001, 1.767, 6.077, 5.557, 13.293001])
+        expected_kernels = expected_kernels.reshape((2, 2, 2, 2), order='F')
+
+        np.testing.assert_allclose(expected_kernels, conv_2d.weight_updates, atol=1e-04)
 
 
 if __name__ == "__main__":
