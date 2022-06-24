@@ -258,24 +258,51 @@ class MaxPoolingLayer:
     def __init__(self, kernel_size):
         self.kernel_size = kernel_size
         self.stride = kernel_size
+        self.input_shape = None
         self.mask = None
 
     def forward(self, in_tensor):
+        self.input_shape = in_tensor.shape
+
         result_shape = (in_tensor.shape[0] // self.kernel_size[0], in_tensor.shape[1] // self.kernel_size[1])
         result = np.zeros(result_shape)
 
+        self.mask = np.zeros(result.size)
+        i_mask = 0
+
         for ix in range(result.shape[0]):
             for iy in range(result.shape[1]):
-                x = ix * self.stride[0]
-                y = iy * self.stride[1]
+                start_x = ix * self.stride[0]
+                start_y = iy * self.stride[1]
 
-                application_area = in_tensor[x:x + self.kernel_size[0], y:y + self.kernel_size[1]]
+                application_area = in_tensor[start_x:start_x + self.kernel_size[0], start_y:start_y + self.kernel_size[1]]
                 result[ix, iy] = np.max(application_area)
+
+                argmax = self.deflatten_index_2D(np.argmax(application_area), (2, 2))
+                flat_argmax = (start_x + argmax[1]) * self.input_shape[0] + (start_y + argmax[0])
+                self.mask[i_mask] = flat_argmax
+                i_mask += 1
 
         return result.flatten()
 
-    def backward(self):
-        pass
+    def backward(self, dy):
+        result = np.zeros(self.input_shape)
+        i_mask = 0
+
+        for ix in range(dy.shape[0]):
+            for iy in range(dy.shape[1]):
+                result_x = int(self.mask[i_mask] % self.input_shape[0])
+                result_y = int(self.mask[i_mask] // self.input_shape[1])
+                result[result_x, result_y] = dy[ix, iy]
+                i_mask += 1
+
+        return result
+
+    @staticmethod
+    def deflatten_index_2D(flat_index, matrix_size):
+        result_x = matrix_size[0] % flat_index
+        result_y = matrix_size[1] // flat_index
+        return result_x, result_y
 
 
 class MnistExample:
@@ -600,15 +627,22 @@ class TestLayers(unittest.TestCase):
     def test_max_pooling(self):
         max_pooling = MaxPoolingLayer((2, 2))
 
-        in_tensor = np.array([4, 1, 1, 3, 3, 4, 8, 6, 0, 5, 2, 2, 0, 6, 9, 5, 1, 8, 4, 8, 5, 7, 4, 2, 9, 8, 5, 9, 3, 0, 3, 6, 7, 4, 7, 5])
-        in_tensor = in_tensor.reshape((6, 6))
+        in_tensor = np.array([4, 1, 3, 3, 8, 6, 5, 2, 9, 8, 9, 3, 3, 6, 4, 7])
+        # in_tensor = np.array([4, 1, 3, 3, 8, 6, 5, 2, 9, 8, 9, 3, 3, 6, 4, 7])
+        in_tensor = in_tensor.reshape((4, 4))
 
         # forward test
-        expected_forward = np.array([8, 5, 4, 8, 9, 8, 9, 9, 7])
-
+        expected_forward = np.array([8, 5, 9, 9])
         actual_forward = max_pooling.forward(in_tensor)
 
         np.testing.assert_allclose(expected_forward, actual_forward, atol=1e-04)
+
+        # backward test
+        expected_backward = np.array([0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0])
+        expected_backward = expected_backward.reshape((4, 4))
+        actual_backward = max_pooling.backward(np.array([[1, 1], [1, 1]]))
+
+        np.testing.assert_allclose(expected_backward, actual_backward, atol=1e-04)
 
 
 if __name__ == "__main__":
