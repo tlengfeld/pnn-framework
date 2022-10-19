@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="468155e7-ec61-45fd-91d2-3695da609596" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/code/.idea/code.iml" beforeDir="false" afterPath="$PROJECT_DIR$/code/.idea/code.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/code/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/code/main.py" afterDir="false" />
+    <list default="true" id="2f634b8a-7450-44f0-8427-54c122d3103e" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/dl-framework-lengfeld-seitz.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dl-framework-lengfeld-seitz.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -16,7 +16,7 @@
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
   </component>
-  <component name="ProjectId" id="2Aa4dOGrpAXSKxXaWLTFJu7nGh8" />
+  <component name="ProjectId" id="2BtmWVJuqJ9uGbEVii48jN76dO9" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
@@ -26,19 +26,24 @@
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "WebServerToolWindowFactoryState": "false",
-    "last_opened_file_path": "D:/EigeneDateien/Studium/info-master/semester-8/neural-networks/pnn-framework"
+    "last_opened_file_path": "/home/tobias/Documents/info-master/semester-1/pnn/dl-framework-lengfeld-seitz",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
   }
 }]]></component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
-      <changelist id="468155e7-ec61-45fd-91d2-3695da609596" name="Changes" comment="" />
-      <created>1655234448652</created>
+      <changelist id="2f634b8a-7450-44f0-8427-54c122d3103e" name="Changes" comment="" />
+      <created>1657733786395</created>
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
-      <updated>1655234448652</updated>
-      <workItem from="1655234449965" duration="29000" />
+      <updated>1657733786395</updated>
+      <workItem from="1657733787792" duration="588000" />
     </task>
     <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
   </component>
 </project>
